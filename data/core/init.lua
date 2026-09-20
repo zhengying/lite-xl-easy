@@ -2,7 +2,15 @@ require "core.strict"
 require "core.regex"
 local common = require "core.common"
 local config = require "core.config"
-local style = require "colors.default"
+local style
+do
+  local ok_easy, easy = pcall(require, "colors.easyai")
+  if ok_easy and type(easy) == "table" then
+    style = easy
+  else
+    style = require "colors.default"
+  end
+end
 local command
 local keymap
 local dirwatch
@@ -261,7 +269,9 @@ end
 
 function core.init()
   core.log_items = {}
-  core.log_quiet("Lite XL version %s - mod-version %s", VERSION, MOD_VERSION_STRING)
+  core.product_name = "EasyAI"
+  core.product_name_zh = "极简AI编辑器"
+  core.log_quiet("%s (based on Lite XL %s) - mod-version %s", core.product_name, VERSION, MOD_VERSION_STRING)
 
   command = require "core.command"
   keymap = require "core.keymap"
@@ -287,7 +297,11 @@ function core.init()
   core.previous_find = {}
   core.previous_replace = {}
 
-  local project_dir = core.recent_projects[1] or "."
+  -- EasyAI V1: always start empty; never auto-open last project.
+  -- Use a tiny dedicated workspace dir so we never scan HOME.
+  local default_workspace = USERDIR .. PATHSEP .. "workspace"
+  pcall(common.mkdirp, default_workspace)
+  local project_dir = system.get_file_info(default_workspace) and default_workspace or (HOME or ".")
   local project_dir_explicit = false
   local files = {}
   if not RESTARTED then
@@ -367,6 +381,27 @@ function core.init()
     project_dir_abs = system.absolute_path(".")
     local status, err = pcall(core.set_project, project_dir_abs)
   end
+
+  -- EasyAI V1 plugin policy: must apply before plugins load (name-order).
+  config.plugins.autocomplete = false
+  config.plugins.projectsearch = false
+  config.plugins.workspace = false
+  config.plugins.findfile = false
+  config.plugins.toolbarview = false
+  config.plugins.macro = false
+  config.plugins.drawwhitespace = false
+  config.plugins.tabularize = false
+  config.plugins.lineguide = false
+  config.plugins.autorestart = false
+  config.plugins.scale = false
+  config.use_system_file_picker = true
+  config.file_size_limit = 64
+  config.large_file_size = 10 * 1024 * 1024
+  config.plugins.treeview = common.merge({ visible = false, size = 220 * SCALE }, config.plugins.treeview)
+  if type(config.plugins.treeview) == "table" then
+    config.plugins.treeview.visible = false
+  end
+  config.plugins.easyai_panel = common.merge({ visible = false, size = 340 * SCALE }, config.plugins.easyai_panel)
 
   -- Load core and user plugins giving preference to user ones with same name.
   local plugins_success, plugins_refuse_list = core.load_plugins()
@@ -919,7 +954,8 @@ end
 
 
 function core.compose_window_title(title)
-  return (title == "" or title == nil) and "Lite XL" or title .. " - Lite XL"
+  local product = core.product_name or "EasyAI"
+  return (title == "" or title == nil) and product or title .. " — " .. product
 end
 
 

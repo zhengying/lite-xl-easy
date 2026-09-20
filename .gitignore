@@ -1,25 +1,52 @@
+# Build outputs
 build*/
 .build*/
+build-easyai/
+dist/
+/appimage*
+*.diff
+*.exe
+*.tar.gz
+*.zip
+compile_commands.json
+
+# Packaged apps / bundles
+*App*
+EasyAI.app/
+*.app/
+*.dmg
+*.msi
+*.pkg
+
+# Third-party / tooling caches
 lhelper/
 submodules/
 subprojects/*/
-/appimage*
+subprojects/.wraplock
 .vscode
 .cache
 .ccls-cache
 .lite-debug.log
 .run*
-*.diff
-*.exe
-*.tar.gz
-*.zip
+
+# OS / editor junk
 *.DS_Store
-*App*
-compile_commands.json
+.DS_Store
+Thumbs.db
+*.swp
+*~
+
+# Runtime / user data (never commit)
 error.txt
+user/
+**/user/easyai_history.lua
+**/user/easyai_llm.lua
+session.lua
+
+
+# Stock Lite XL release name patterns from upstream ignore rules
 lite-xl*
 LiteXL*
-
 !resources/windows/*.diff
 !resources/windows/*.exe.manifest.in
 !resources/macos/*.py

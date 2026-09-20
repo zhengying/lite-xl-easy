@@ -188,6 +188,6 @@ end, {
 })
 command.add("core.emptyview", {
   ["emptyview:new-doc"] = function()
-    command.perform("core:new-doc")
+    command.perform("easyai:open-file")
   end
 })

@@ -17,8 +17,8 @@ else
 end
 USERDIR = (system.get_file_info(EXEDIR .. PATHSEP .. 'user') and (EXEDIR .. PATHSEP .. 'user'))
        or os.getenv("LITE_USERDIR")
-       or ((os.getenv("XDG_CONFIG_HOME") and os.getenv("XDG_CONFIG_HOME") .. PATHSEP .. "lite-xl"))
-       or (HOME and (HOME .. PATHSEP .. '.config' .. PATHSEP .. 'lite-xl'))
+       or ((os.getenv("XDG_CONFIG_HOME") and os.getenv("XDG_CONFIG_HOME") .. PATHSEP .. "easyai"))
+       or (HOME and (HOME .. PATHSEP .. '.config' .. PATHSEP .. 'easyai'))
 
 package.path = DATADIR .. '/?.lua;'
 package.path = DATADIR .. '/?/init.lua;' .. package.path
