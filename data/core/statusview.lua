@@ -656,6 +656,11 @@ end
 ---Draw the tooltip of a given status bar item.
 ---@param item core.statusview.item
 function StatusView:draw_item_tooltip(item)
+  -- EasyAI: never draw status tooltips while a context menu is open
+  local cm = core.root_view and core.root_view.context_menu
+  if cm and cm.visible then
+    return
+  end
   core.root_view:defer_draw(function()
     local text = item.tooltip
     local w = style.font:get_width(text)

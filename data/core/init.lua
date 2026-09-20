@@ -422,6 +422,10 @@ function core.init()
   for _, filename in ipairs(files) do
     core.root_view:open_doc(core.open_doc(filename))
   end
+  -- EasyAI: always start with an editable untitled buffer when no files given
+  if #files == 0 then
+    core.root_view:open_doc(core.open_doc())
+  end
 
   if not plugins_success then
     -- defer LogView to after everything is initialized,
@@ -473,17 +477,20 @@ function core.confirm_close_docs(docs, close_fn, ...)
   if dirty_count > 0 then
     local text
     if dirty_count == 1 then
-      text = string.format("\"%s\" has unsaved changes. Quit anyway?", dirty_name)
+      text = string.format("「%s」有未保存更改。仍要继续吗？", dirty_name)
     else
-      text = string.format("%d docs have unsaved changes. Quit anyway?", dirty_count)
+      text = string.format("%d 个文档有未保存更改。仍要继续吗？", dirty_count)
     end
     local args = {...}
     local opt = {
-      { text = "Yes", default_yes = true },
-      { text = "No", default_no = true }
+      { text = "取消", default_no = true },
+      { text = "仍要继续", default_yes = true },
     }
-    core.nag_view:show("Unsaved Changes", text, opt, function(item)
-      if item.text == "Yes" then close_fn(table.unpack(args)) end
+    core.nag_view:show("未保存的更改", text, opt, function(item)
+      local t = item.text
+      if t == "仍要继续" or t == "Yes" or t == "yes" then
+        close_fn(table.unpack(args))
+      end
     end)
   else
     close_fn(...)

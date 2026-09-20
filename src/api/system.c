@@ -1476,6 +1476,86 @@ static int f_open_file_dialog(lua_State* L) {
   return open_dialog(L, SDL_FILEDIALOG_OPENFILE);
 }
 
+#ifdef __APPLE__
+/* Implemented in bundle_open.m — files + folders in one NSOpenPanel. */
+char **easyai_open_paths_sync(void *ns_window, const char *title, const char *location, int allow_many, int *out_count);
+
+static int f_open_path_dialog(lua_State* L) {
+  RenWindow *window_renderer = *(RenWindow**)luaL_checkudata(L, 1, API_TYPE_RENWINDOW);
+  uintptr_t id = luaL_checkinteger(L, 2);
+  const char *title = "打开";
+  const char *location = NULL;
+  int allow_many = 1;
+  if (!lua_isnoneornil(L, 3) && lua_istable(L, 3)) {
+    lua_getfield(L, 3, "title");
+    if (lua_isstring(L, -1)) title = lua_tostring(L, -1);
+    lua_pop(L, 1);
+    lua_getfield(L, 3, "default_location");
+    if (lua_isstring(L, -1)) location = lua_tostring(L, -1);
+    lua_pop(L, 1);
+    lua_getfield(L, 3, "allow_many");
+    if (!lua_isnil(L, -1)) allow_many = lua_toboolean(L, -1);
+    lua_pop(L, 1);
+  }
+
+  void *nswin = NULL;
+  if (window_renderer && window_renderer->window) {
+    nswin = (void *)SDL_GetPointerProperty(
+      SDL_GetWindowProperties(window_renderer->window),
+      "SDL.window.cocoa.window",
+      NULL
+    );
+  }
+
+  int count = 0;
+  char **paths = easyai_open_paths_sync(nswin, title, location, allow_many, &count);
+
+  CustomEvent event;
+  SDL_zero(event);
+  event.data1 = (void *)id;
+  event.data2 = NULL;
+
+  if (paths == NULL) {
+    event.code = DIALOG_CANCEL;
+  } else if (count <= 0) {
+    event.code = DIALOG_CANCEL;
+    for (int i = 0; paths[i]; i++) free(paths[i]);
+    free(paths);
+  } else {
+    event.code = DIALOG_OK;
+    size_t bytes = 0;
+    for (int i = 0; i < count; i++) {
+      if (paths[i]) bytes += strlen(paths[i]) + 1;
+    }
+    char *dataptr = event.data2 = SDL_malloc(bytes + 1);
+    if (!dataptr) {
+      event.code = DIALOG_ERROR;
+      event.data2 = SDL_strdup("out of memory");
+    } else {
+      for (int i = 0; i < count; i++) {
+        if (!paths[i]) continue;
+        size_t len = strlen(paths[i]) + 1;
+        SDL_memcpy(dataptr, paths[i], len);
+        dataptr += len;
+        free(paths[i]);
+      }
+      *dataptr = '\0';
+    }
+    free(paths);
+  }
+
+  if (!push_custom_event(dialogfinished_event_name, &event)) {
+    if (event.data2) SDL_free(event.data2);
+  }
+  return 0;
+}
+#else
+static int f_open_path_dialog(lua_State* L) {
+  /* Non-macOS: fall back to file open dialog (dirs handled if returned). */
+  return open_dialog(L, SDL_FILEDIALOG_OPENFILE);
+}
+#endif
+
 static int f_save_file_dialog(lua_State* L) {
   return open_dialog(L, SDL_FILEDIALOG_SAVEFILE);
 }
@@ -1546,6 +1626,7 @@ static const luaL_Reg lib[] = {
   { "setenv",                f_setenv                },
   { "ftruncate",             f_ftruncate             },
   { "open_file_dialog",      f_open_file_dialog      },
+  { "open_path_dialog",      f_open_path_dialog      },
   { "save_file_dialog",      f_save_file_dialog      },
   { "open_directory_dialog", f_open_directory_dialog },
   { "get_sandbox",           f_get_sandbox           },

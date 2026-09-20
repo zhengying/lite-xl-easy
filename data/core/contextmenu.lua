@@ -85,7 +85,8 @@ end
 function ContextMenu:show(x, y, items, ...)
   local items_list = { width = 0, height = 0, arguments = { ... } }
   for _, item in ipairs(items) do
-    if item and (not item.command or command.is_valid(item.command, ...)) then
+    -- Keep disabled entries visible (grayed); only filter invalid enabled commands.
+    if item and (item.disabled or not item.command or command.is_valid(item.command, ...)) then
       table.insert(items_list, item)
     end
   end
@@ -139,7 +140,10 @@ function ContextMenu:on_mouse_pressed(button, x, y)
   if not self.visible then return false end
   if button =='left' and x >= self.position.x and y >= self.position.y and x < self.position.x + self.items.width and y < self.position.y + self.height then
     local item = self:get_item_selected()
-    if not item or not item.command then return true end
+    if not item or not item.command or item.disabled then
+      self:hide()
+      return true
+    end
     if core.active_view == self then
       core.set_active_view(core.last_active_view)
     end
@@ -175,6 +179,7 @@ end
 ---Event handler for when the selection is confirmed.
 ---@param item core.contextmenu.item
 function ContextMenu:on_selected(item)
+  if item and item.disabled then return end
   if type(item.command) == "string" then
     command.perform(item.command, table.unpack(self.items.arguments))
   else
@@ -244,11 +249,11 @@ function ContextMenu:draw()
     if item == DIVIDER then
       renderer.draw_rect(x, y + divider_padding * SCALE, w, divider_width, style.divider)
     else
-      if i == self.selected then
+      if i == self.selected and not item.disabled then
         renderer.draw_rect(x, y, w, h, style.selection)
       end
-
-      common.draw_text(style.font, style.text, item.text, "left", x + style.padding.x, y, w, h)
+      local color = item.disabled and style.dim or style.text
+      common.draw_text(style.font, color, item.text, "left", x + style.padding.x, y, w, h)
       if item.info then
         common.draw_text(style.font, style.dim, item.info, "right", x, y, w - style.padding.x, h)
       end

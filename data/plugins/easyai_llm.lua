@@ -6,6 +6,7 @@ local command = require "core.command"
 local style = require "core.style"
 local View = require "core.view"
 local http = require "plugins.easyai_http"
+local textui = require "plugins.easyai_textinput"
 
 local llm = {}
 
@@ -163,6 +164,9 @@ local ConfigModal = View:extend()
 ConfigModal.context = "application"
 
 function ConfigModal:__tostring() return "EasyAIConfigModal" end
+function ConfigModal:supports_text_input()
+  return true
+end
 
 function ConfigModal:new()
   ConfigModal.super.new(self)
@@ -170,17 +174,50 @@ function ConfigModal:new()
   local cfg = llm.load()
   local provider = cfg.provider or "deepseek"
   local preset = llm.get_provider(provider) or llm.providers[2]
-  self.state = {
-    provider_idx = 2,
-    base_url = cfg.base_url or preset.base_url,
-    model = cfg.model or preset.model,
-    api_key = cfg.api_key or "",
-    focus = "provider", -- provider | base_url | model | api_key
-  }
+  local provider_idx = 2
   for i, p in ipairs(llm.providers) do
-    if p.id == provider then self.state.provider_idx = i break end
+    if p.id == provider then provider_idx = i break end
   end
+  self.state = {
+    provider_idx = provider_idx,
+    focus = "api_key",
+  }
+  self.inputs = {
+    base_url = textui.TextInput.new({
+      text = cfg.base_url or preset.base_url,
+      placeholder = "https://api.example.com/v1",
+      on_change = function(t) self.state.base_url = t end,
+    }),
+    model = textui.TextInput.new({
+      text = cfg.model or preset.model,
+      placeholder = "model-name",
+      on_change = function(t) self.state.model = t end,
+    }),
+    api_key = textui.TextInput.new({
+      text = cfg.api_key or "",
+      placeholder = "sk-…（本地模型可留空）",
+      password = true,
+      on_change = function(t) self.state.api_key = t end,
+    }),
+  }
+  self.state.base_url = cfg.base_url or preset.base_url
+  self.state.model = cfg.model or preset.model
+  self.state.api_key = cfg.api_key or ""
   self.visible = true
+  self:focus_field("api_key")
+end
+
+function ConfigModal:focus_field(key)
+  self.state.focus = key
+  for k, inp in pairs(self.inputs or {}) do
+    inp:focus(k == key)
+  end
+end
+
+function ConfigModal:collect()
+  self.state.base_url = self.inputs.base_url:get_text()
+  self.state.model = self.inputs.model:get_text()
+  self.state.api_key = self.inputs.api_key:get_text()
 end
 
 function ConfigModal:get_name() return "LLM 设置" end
@@ -203,49 +240,62 @@ end
 
 function ConfigModal:draw()
   -- dim overlay
-  renderer.draw_rect(self.position.x, self.position.y, self.size.x, self.size.y, style.nagbar_dim or {0,0,0,140})
+  local nagdim = style.nagbar_dim or {0, 0, 0, 140}
+  renderer.draw_rect(self.position.x, self.position.y, self.size.x, self.size.y, nagdim)
   local x, y, w, h = self:get_name_box()
-  renderer.draw_rect(x, y, w, h, style.background2)
-  renderer.draw_rect(x, y, w, h, { style.accent[1], style.accent[2], style.accent[3], 40 })
+  renderer.draw_rect(x, y, w, h, style.background2 or {24,24,27})
+  renderer.draw_rect(x, y, w, 2, style.accent)
   -- border
-  renderer.draw_rect(x, y, w, 1, style.divider)
   renderer.draw_rect(x, y + h - 1, w, 1, style.divider)
   renderer.draw_rect(x, y, 1, h, style.divider)
   renderer.draw_rect(x + w - 1, y, 1, h, style.divider)
 
   local pad = 16 * SCALE
   local ty = y + pad
-  renderer.draw_text(style.big_font:copy(math.floor(22 * SCALE)), "配置 LLM Provider", x + pad, ty, style.accent)
-  ty = ty + style.big_font:get_height() * 0.6 + 12 * SCALE
+  local title_font = style.font
+  pcall(function()
+    if style.big_font and style.big_font.copy then
+      title_font = style.big_font:copy(math.floor(20 * SCALE)) or style.font
+    end
+  end)
+  renderer.draw_text(title_font, "配置 LLM Provider", x + pad, ty, style.accent)
+  ty = ty + title_font:get_height() * 0.8 + 10 * SCALE
   renderer.draw_text(style.font, "只需配置一次。所有请求均由你手动触发。", x + pad, ty, style.dim)
   ty = ty + style.font:get_height() + 16 * SCALE
 
-  local row_h = style.font:get_height() + 14 * SCALE
+  local row_h = style.font:get_height() + 18 * SCALE
   local label_w = 90 * SCALE
   self.field_ys = {}
+  self.provider_rect = nil
   for _, f in ipairs(fields) do
     self.field_ys[f.key] = ty
     local focused = self.state.focus == f.key
     local label_color = focused and style.accent or style.dim
-    renderer.draw_text(style.font, f.label, x + pad, ty + 4 * SCALE, label_color)
+    renderer.draw_text(style.font, f.label, x + pad, ty + 6 * SCALE, label_color)
     local fx = x + pad + label_w
     local fw = w - pad * 2 - label_w
     local fh = row_h - 6 * SCALE
-    renderer.draw_rect(fx, ty, fw, fh, style.background3)
-    if focused then
-      renderer.draw_rect(fx, ty, 2 * SCALE, fh, style.accent)
-    end
-    local value = ""
     if f.key == "provider" then
+      self.provider_rect = { x = fx, y = ty, w = fw, h = fh }
+      renderer.draw_rect(fx, ty, fw, fh, style.background3)
+      renderer.draw_rect(fx, ty, fw, 1, focused and style.accent or {60,60,66})
+      renderer.draw_rect(fx, ty + fh - 1, fw, 1, focused and style.accent or {60,60,66})
+      renderer.draw_rect(fx, ty, 1, fh, focused and style.accent or {60,60,66})
+      renderer.draw_rect(fx + fw - 1, ty, 1, fh, focused and style.accent or {60,60,66})
       local p = llm.providers[self.state.provider_idx]
-      value = p and p.name or ""
+      local value = (p and p.name or "") .. "  ↕"
+      renderer.draw_text(style.font, value, fx + 8 * SCALE, ty + 6 * SCALE, style.text)
     else
-      value = self.state[f.key] or ""
-      if f.key == "api_key" and value ~= "" then
-        value = value:sub(1, 4) .. string.rep("*", math.min(12, #value - 4))
+      local inp = self.inputs and self.inputs[f.key]
+      if inp then
+        inp:draw(fx, ty, fw, fh, {
+          password = (f.key == "api_key") or nil,
+        })
+        if f.key == "api_key" then
+          inp.password = true
+        end
       end
     end
-    renderer.draw_text(style.font, value, fx + 8 * SCALE, ty + 4 * SCALE, style.text)
     ty = ty + row_h + 8 * SCALE
   end
 
@@ -265,14 +315,19 @@ end
 function ConfigModal:apply_preset()
   local p = llm.providers[self.state.provider_idx]
   if not p then return end
+  self.inputs.base_url:set_text(p.base_url)
+  self.inputs.model:set_text(p.model)
   self.state.base_url = p.base_url
   self.state.model = p.model
   if p.id ~= "custom" then
-    self.state.focus = "api_key"
+    self:focus_field("api_key")
+  else
+    self:focus_field("base_url")
   end
 end
 
 function ConfigModal:save()
+  self:collect()
   local p = llm.providers[self.state.provider_idx]
   if not p then return end
   if not self.state.base_url or self.state.base_url == "" then
@@ -303,9 +358,11 @@ end
 
 function ConfigModal:on_text_input(text)
   local f = self.state.focus
-  if f == "provider" then return end
-  self.state[f] = (self.state[f] or "") .. text
-  core.redraw = true
+  if f == "provider" then return true end
+  local inp = self.inputs and self.inputs[f]
+  if inp then
+    return inp:on_text(text)
+  end
   return true
 end
 
@@ -319,7 +376,7 @@ function ConfigModal:on_key_pressed(key)
     for i, k in ipairs(order) do
       if k == self.state.focus then idx = i break end
     end
-    self.state.focus = order[(idx % #order) + 1]
+    self:focus_field(order[(idx % #order) + 1])
     core.redraw = true
     return true
   elseif key == "return" or key == "kpenter" then
@@ -329,13 +386,6 @@ function ConfigModal:on_key_pressed(key)
       self:save()
     end
     return true
-  elseif key == "backspace" then
-    local f = self.state.focus
-    if f ~= "provider" then
-      self.state[f] = (self.state[f] or ""):sub(1, -2)
-      core.redraw = true
-      return true
-    end
   elseif key == "up" or key == "down" then
     if self.state.focus == "provider" then
       local d = (key == "up") and -1 or 1
@@ -355,6 +405,10 @@ function ConfigModal:on_key_pressed(key)
       return true
     end
   end
+  local inp = self.inputs and self.inputs[self.state.focus]
+  if inp then
+    return inp:on_key(key)
+  end
   return false
 end
 
@@ -370,17 +424,22 @@ function ConfigModal:on_mouse_pressed(button, x, y, clicks)
     llm.close_config()
     return true
   end
-  if self.field_ys then
-    local bx, byy, bw, bh = self:get_name_box()
-    for key, fy in pairs(self.field_ys) do
-      if y >= fy and y <= fy + 28 * SCALE and x >= bx and x <= bx + bw then
-        self.state.focus = key
-        core.redraw = true
-        return true
-      end
+  if self.provider_rect then
+    local r = self.provider_rect
+    if x >= r.x and x <= r.x + r.w and y >= r.y and y <= r.y + r.h then
+      self:focus_field("provider")
+      core.redraw = true
+      return true
     end
   end
-  return true -- swallow clicks on overlay
+  for key, inp in pairs(self.inputs or {}) do
+    if inp:on_mouse_pressed(button, x, y) then
+      self:focus_field(key)
+      core.redraw = true
+      return true
+    end
+  end
+  return true
 end
 
 local modal
@@ -388,45 +447,53 @@ local modal
 function llm.open_config(on_done)
   if modal then return end
   modal = ConfigModal()
+  local p = llm.providers[modal.state.provider_idx]
+  if modal.focus_field then
+    if p and p.key_required then
+      modal:focus_field("api_key")
+    else
+      modal:focus_field("model")
+    end
+  end
   llm._on_config_done = on_done
+  pcall(function() system.text_input(core.window, true) end)
   core.redraw = true
 end
 
--- Better modal overlay: intercept rootview draw
-local RootView = require "core.rootview"
-local _root_draw = RootView.draw
-function RootView:draw()
-  _root_draw(self)
-  if modal then
-    -- set modal geometry to full window
-    modal.position.x, modal.position.y = 0, 0
-    modal.size.x, modal.size.y = self.size.x, self.size.y
-    modal:draw()
-  end
+-- Driven by easyai_panel RootView router — always drawn ABOVE the AI panel.
+function llm.modal_visible()
+  return modal ~= nil
 end
 
-local _root_key = RootView.on_key_pressed
-function RootView:on_key_pressed(...)
-  if modal then
-    return modal:on_key_pressed(...)
-  end
-  return _root_key(self, ...)
+function llm.draw_modal(root)
+  if not modal then return end
+  -- full-window, never clipped to the AI panel strip
+  local w = root.size.x or 0
+  local h = root.size.y or 0
+  renderer.set_clip_rect(0, 0, w, h)
+  modal.position.x, modal.position.y = 0, 0
+  modal.size.x, modal.size.y = w, h
+  modal:draw()
 end
 
-local _root_text = RootView.on_text_input
-function RootView:on_text_input(...)
-  if modal then
-    return modal:on_text_input(...)
-  end
-  return _root_text(self, ...)
+function llm.modal_key(...)
+  if modal then return modal:on_key_pressed(...) end
+  return false
 end
 
-local _root_mouse = RootView.on_mouse_pressed
-function RootView:on_mouse_pressed(...)
-  if modal then
-    return modal:on_mouse_pressed(...)
-  end
-  return _root_mouse(self, ...)
+function llm.modal_text(...)
+  if modal then return modal:on_text_input(...) end
+  return false
+end
+
+function llm.modal_mouse(...)
+  if modal then return modal:on_mouse_pressed(...) end
+  return false
+end
+
+function llm.modal_move(...)
+  if modal and modal.on_mouse_moved then return modal:on_mouse_moved(...) end
+  return false
 end
 
 function llm.close_config()

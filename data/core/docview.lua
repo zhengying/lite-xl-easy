@@ -6,6 +6,7 @@ local keymap = require "core.keymap"
 local translate = require "core.doc.translate"
 local ime = require "core.ime"
 local View = require "core.view"
+local command = require "core.command"
 local ContextMenu = require "core.contextmenu"
 
 ---@class core.docview : core.view
@@ -75,6 +76,38 @@ end
 function DocView:try_close(do_close)
   if self.doc:is_dirty()
   and #core.get_views_referencing_doc(self.doc) == 1 then
+    local name = self.doc:get_name()
+    local ok, dlg = pcall(require, "plugins.easyai_dialog")
+    if ok and dlg and dlg.show then
+      dlg.show({
+        title = "未保存的更改",
+        message = string.format("「%s」有未保存更改。关闭前要保存吗？", name),
+        default = "save",
+        escape = "cancel",
+        buttons = {
+          { id = "cancel", text = "取消" },
+          { id = "discard", text = "不保存关闭", danger = true },
+          { id = "save", text = "保存并关闭", primary = true },
+        },
+        on_select = function(id)
+          if id == "save" then
+            if self.doc.filename then
+              self.doc:save()
+            else
+              -- unsaved path: native save dialog then close
+              pcall(function()
+                command.perform("easyai:save-as")
+              end)
+            end
+            do_close()
+          elseif id == "discard" then
+            do_close()
+          end
+        end,
+      })
+      return
+    end
+    -- fallback (should not happen once dialog plugin loads)
     core.command_view:enter("Unsaved Changes; Confirm Close", {
       submit = function(_, item)
         if item.text:match("^[cC]") then

@@ -229,7 +229,12 @@ command.add(nil, {
   end,
 
   ["core:open-file"] = function()
-    open_file(config.use_system_file_picker)
+    -- EasyAI: one dialog for files + folders when available
+    if system.open_path_dialog then
+      command.perform("easyai:open")
+    else
+      open_file(config.use_system_file_picker)
+    end
   end,
 
   ["core:open-file-picker"] = function()
